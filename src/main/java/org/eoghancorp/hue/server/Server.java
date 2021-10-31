@@ -1,0 +1,133 @@
+package org.eoghancorp.hue.server;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import org.eoghancorp.hue.models.Light;
+import org.springframework.util.StopWatch;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
+
+@CrossOrigin("http://localhost:3000")
+@RestController
+public class Server {
+    @GetMapping("/status")
+    public Light getLightAt(@RequestParam int lightNumber) {
+        try {
+            String url = String.format("http://10.0.0.53/api/%s/lights/%s", getCreds(), lightNumber);
+
+            String response = createLightRequest(url);
+
+
+            return Deserialize(response, Light.class);
+
+
+
+        }
+        catch(Exception e) {
+
+        }
+        return new Light();
+    }
+
+
+    @GetMapping("/")
+    public Light[] getLights() {
+        String apiCreds = getCreds();
+        // Debug.
+        StopWatch watch = new StopWatch();
+        watch.start();
+
+        String url = String.format("http://10.0.0.53/api/%s/lights", apiCreds);
+
+        try {
+            String phueResponse = createLightRequest(url);
+            System.out.printf(phueResponse + "\n\n");
+
+
+            // final Gson gson = new GsonBuilder().create();
+            // final Light[] value = gson.fromJson(phueResponse, Light[].class);
+
+
+            return Deserialize(phueResponse, Light[].class);
+
+        }
+        catch(IOException e) {
+            System.out.println("an exception occurred");
+            System.out.println(e.getMessage());
+        }
+
+        return new Light[] {};
+
+    }
+
+    static String createLightRequest(String phueUrl) throws IOException {
+        String lightResponse = "";
+
+        URL url = new URL(phueUrl);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+        InputStream inStream = conn.getInputStream();
+
+        Scanner scanner = new Scanner(inStream);
+        while(scanner.hasNextLine()) {
+            lightResponse += scanner.next();
+        }
+
+
+        return lightResponse;
+    }
+
+    static <T> T Deserialize(String lightResponse, Class<T> typeClass) throws JsonProcessingException {
+        // TODO: clean this up.
+        // Lights are represented by an index, which is not deserializable. Remove this index and convert to JSON array instead.
+        lightResponse = lightResponse.replaceAll("\"[\\d]\"[:]", "");
+
+        // Remove the trailing closing bracket at end of string.
+        lightResponse = lightResponse.substring(0, lightResponse.length()-1);
+        // Wrap the new string in brackets.
+
+        // In case the response contains multiple lights.
+        if(typeClass.isArray()) {
+            lightResponse = "[" + lightResponse + "]";
+            lightResponse = lightResponse.replaceFirst("[{]", "");
+            lightResponse = lightResponse.replaceAll("[}]$", "");
+        }
+        else lightResponse += "}";
+
+
+        ObjectMapper mapper = new ObjectMapper();
+
+        T deserialized = mapper.readValue(lightResponse, typeClass);
+
+
+        return deserialized;
+    }
+
+
+    static String getCreds() {
+        File file = new File("/Users/omcpartlan/.creds/phue.txt");
+
+        try {
+            Scanner reader = new Scanner(file);
+            // only need the first line of the file.
+            return reader.next();
+
+        }
+        catch (FileNotFoundException e) {
+            System.out.println(e);
+            return null;
+        }
+    }
+
+
+}
